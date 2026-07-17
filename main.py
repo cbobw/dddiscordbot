@@ -6,6 +6,7 @@ from flask import Flask
 import discord
 from discord.ext import commands
 
+# 1. Flask 網頁伺服器（讓 Render 保持運行）
 app = Flask('')
 
 @app.route('/')
@@ -16,6 +17,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
+# 2. 防休眠機制
 def self_ping():
     time.sleep(30)
     url = os.environ.get("RENDER_EXTERNAL_URL")
@@ -27,6 +29,7 @@ def self_ping():
                 pass
             time.sleep(600)
 
+# 3. Discord 機器人設定
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -52,10 +55,11 @@ async def on_message(message):
         async with message.channel.typing():
             try:
                 channel_id = str(message.channel.id)
+                # 使用 streaming 模式以支援 Agent
                 payload = {
                     "inputs": {},
                     "query": query,
-                    "response_mode": "blocking",
+                    "response_mode": "streaming",
                     "user": str(message.author.id),
                     "conversation_id": conversations.get(channel_id, "")
                 }
@@ -69,7 +73,6 @@ async def on_message(message):
                     if data.get("conversation_id"):
                         conversations[channel_id] = data.get("conversation_id")
                 else:
-                    # 這一行會直接把錯誤訊息秀出來，讓你抓錯！
                     await message.reply(f"錯誤 {response.status_code}: {response.text}")
             except Exception as e:
                 await message.reply(f"程式崩潰: {str(e)}")
