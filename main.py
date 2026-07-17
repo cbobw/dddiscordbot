@@ -2,11 +2,12 @@ import os
 import threading
 import time
 import requests
+import json
 from flask import Flask
 import discord
 from discord.ext import commands
 
-# 1. Flask 網頁伺服器（讓 Render 保持運行）
+# 1. Flask 網頁伺服器
 app = Flask('')
 
 @app.route('/')
@@ -55,7 +56,7 @@ async def on_message(message):
         async with message.channel.typing():
             try:
                 channel_id = str(message.channel.id)
-                # 使用 streaming 模式以支援 Agent
+                # 使用 streaming 模式 (Agent 必須)
                 payload = {
                     "inputs": {},
                     "query": query,
@@ -65,17 +66,28 @@ async def on_message(message):
                 }
                 
                 headers = {"Authorization": f"Bearer {DIFY_API_KEY}", "Content-Type": "application/json"}
-                response = requests.post(f"{DIFY_API_URL}/chat-messages", json=payload, headers=headers)
+                
+                # 改用 stream=True 處理串流
+                response = requests.post(f"{DIFY_API_URL}/chat-messages", json=payload, headers=headers, stream=True)
                 
                 if response.status_code == 200:
-                    data = response.json()
-                    await message.reply(data.get("answer", "（沒料）"))
-                    if data.get("conversation_id"):
-                        conversations[channel_id] = data.get("conversation_id")
+                    full_answer = ""
+                    # 解析 SSE (Server-Sent Events) 串流格式
+                    for line in response.iter_lines():
+                        if line:
+                            decoded_line = line.decode('utf-8')
+                            if decoded_line.startswith("data:"):
+                                data = json.loads(decoded_line[5:])
+                                if "answer" in data:
+                                    full_answer += data["answer"]
+                                if "conversation_id" in data:
+                                    conversations[channel_id] = data["conversation_id"]
+                    
+                    await message.reply(full_answer if full_answer else "（ee 沒說話）")
                 else:
                     await message.reply(f"錯誤 {response.status_code}: {response.text}")
             except Exception as e:
-                await message.reply(f"程式崩潰: {str(e)}")
+                await message.reply(f"解析發生錯誤: {str(e)}")
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
