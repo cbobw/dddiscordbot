@@ -56,7 +56,6 @@ async def on_message(message):
         async with message.channel.typing():
             try:
                 channel_id = str(message.channel.id)
-                # 使用 streaming 模式 (Agent 必須)
                 payload = {
                     "inputs": {},
                     "query": query,
@@ -66,13 +65,13 @@ async def on_message(message):
                 }
                 
                 headers = {"Authorization": f"Bearer {DIFY_API_KEY}", "Content-Type": "application/json"}
-                
-                # 改用 stream=True 處理串流
                 response = requests.post(f"{DIFY_API_URL}/chat-messages", json=payload, headers=headers, stream=True)
                 
+                # 自動抓取目前這隻 Discord 機器人的名字（dd 或 ee）
+                bot_name = bot.user.name if bot.user else "Bot"
+
                 if response.status_code == 200:
                     full_answer = ""
-                    # 解析 SSE (Server-Sent Events) 串流格式
                     for line in response.iter_lines():
                         if line:
                             decoded_line = line.decode('utf-8')
@@ -83,9 +82,11 @@ async def on_message(message):
                                 if "conversation_id" in data:
                                     conversations[channel_id] = data["conversation_id"]
                     
-                    await message.reply(full_answer if full_answer else "（ee 沒說話）")
+                    # 動態顯示是誰沒說話
+                    await message.reply(full_answer if full_answer else f"（{bot_name} 沒說話）")
                 else:
-                    await message.reply(f"錯誤 {response.status_code}: {response.text}")
+                    # 如果出錯，直接噴出哪隻機器人跟 Dify 報了什麼錯，方便除錯
+                    await message.reply(f"【{bot_name}】Dify 錯誤 {response.status_code}: {response.text}")
             except Exception as e:
                 await message.reply(f"解析發生錯誤: {str(e)}")
 
