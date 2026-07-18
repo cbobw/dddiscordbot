@@ -49,25 +49,33 @@ async def on_message(message):
         return
 
     if bot.user.mentioned_in(message):
-        query = message.content.replace(f'<@{bot.user.id}>', '').strip()
-        if not query:
+        # 為了讓 AI 知道是誰在跟它說話，我們把發言者的暱稱加進問題裡
+        author_name = message.author.display_name
+        raw_query = message.content.replace(f'<@{bot.user.id}>', '').strip()
+        if not raw_query:
             return
+            
+        # 組合後的 query 會變成像是： "范某的主人 廢物18號 說： 67"
+        query = f"{author_name} 說： {raw_query}"
 
         async with message.channel.typing():
             try:
                 channel_id = str(message.channel.id)
+                bot_id = str(bot.user.id)
+                
                 payload = {
                     "inputs": {},
                     "query": query,
                     "response_mode": "streaming",
-                    "user": str(message.author.id),
+                    # 關鍵修改：將 user 固定為機器人自己的 Discord ID 
+                    # 這樣不管誰呼叫，Dify 都視為同一個人在這頻道對話，完美共用紀錄！
+                    "user": f"discord_bot_{bot_id}",
                     "conversation_id": conversations.get(channel_id, "")
                 }
                 
                 headers = {"Authorization": f"Bearer {DIFY_API_KEY}", "Content-Type": "application/json"}
                 response = requests.post(f"{DIFY_API_URL}/chat-messages", json=payload, headers=headers, stream=True)
                 
-                # 自動抓取目前這隻 Discord 機器人的名字（dd 或 ee）
                 bot_name = bot.user.name if bot.user else "Bot"
 
                 if response.status_code == 200:
@@ -80,12 +88,11 @@ async def on_message(message):
                                 if "answer" in data:
                                     full_answer += data["answer"]
                                 if "conversation_id" in data:
+                                    # 依然只用頻道 ID 鎖定對話紀錄
                                     conversations[channel_id] = data["conversation_id"]
                     
-                    # 動態顯示是誰沒說話
                     await message.reply(full_answer if full_answer else f"（{bot_name} 沒說話）")
                 else:
-                    # 如果出錯，直接噴出哪隻機器人跟 Dify 報了什麼錯，方便除錯
                     await message.reply(f"【{bot_name}】Dify 錯誤 {response.status_code}: {response.text}")
             except Exception as e:
                 await message.reply(f"解析發生錯誤: {str(e)}")
